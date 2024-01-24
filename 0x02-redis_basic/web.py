@@ -1,48 +1,36 @@
 #!/usr/bin/env python3
-"""Implementing an expiring web cache and tracker"""
+"""
+web cache and tracker
+"""
 import requests
 import redis
 from functools import wraps
-from typing import Callable
-import functools
+
+store = redis.Redis()
 
 
-_redis = redis.Redis()
-
-
-def count_request(method: Callable) -> Callable:
-    """Count number of request sent to a URL"""
-
+def count_url_access(method):
+    """ Decorator counting how many times
+    a URL is accessed """
     @wraps(method)
-    def wrapper(*args, **kwargs):
-        """Wrapper function for decorator"""
-        url = str(*args)
-        _redis.incr("count:{}".format(url))
-        cache = _redis.get("count:{}".format(url))
+    def wrapper(url):
+        cached_key = "cached:" + url
+        cached_data = store.get(cached_key)
+        if cached_data:
+            return cached_data.decode("utf-8")
 
-        if cache:
-            return cache.decode('utf-8')
-        else:
-            html = method(url)
-            _redis.setex("count:".format(url), 10, html)
+        count_key = "count:" + url
+        html = method(url)
+
+        store.incr(count_key)
+        store.set(cached_key, html)
+        store.expire(cached_key, 10)
         return html
-
     return wrapper
 
 
-@count_request
+@count_url_access
 def get_page(url: str) -> str:
-    """Obtain HTML content through URL"""
+    """ Returns HTML content of a url """
     res = requests.get(url)
     return res.text
-
-# Use functools.lru_cache to cache with expiration time of 10 seconds
-
-
-get_page = functools.lru_cache(maxsize=1, typed=False, timeout=10)(get_page)
-
-url =
-"http://slowwly.robertomurray.co.uk/delay/3000/url/http://www.example.com"
-print(get_page(url))
-print(get_page(url))
-print(get_page(url))
